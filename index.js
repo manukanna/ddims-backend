@@ -164,7 +164,7 @@ app.post("/submitSurveyForms", surveyUpload, async (req, res) => {
           surveyFormfiles: buildSurveyFormfiles(existingSurvey.surveyFormfiles),
         });
         surveyExisted.set({
-          submittedSurvey: true
+          submittedSurvey: true,
         });
 
         await surveyExisted.save();
@@ -187,7 +187,7 @@ app.post("/submitSurveyForms", surveyUpload, async (req, res) => {
           submittedUserEmail: tokenData.email,
           approvalSurveyId: newSurvey._id,
           approvedSurvey: false,
-          submittedSurvey: true
+          submittedSurvey: true,
         });
 
         await newSurvey.save();
@@ -222,9 +222,13 @@ app.get("/verifySurveyDetails", async (req, res) => {
       if (surveyExisted && surveyDetails) {
         res.status(200).json({
           surveySumitted: surveyExisted.submittedSurvey,
-          approvedSurvey: surveyExisted.approvedSurvey,
-          message: surveyExisted.submittedSurvey ? "You have already submitted your Survey Details." : "Please submit your Survey",
-          surveyDetails : surveyExisted.submittedSurvey ? undefined : surveyDetails,
+          approvedSurvey: surveyDetails.approvedSurvey,
+          message: surveyExisted.submittedSurvey
+            ? "You have already submitted your Survey Details."
+            : "Please submit your Survey",
+          surveyDetails: surveyExisted.submittedSurvey
+            ? undefined
+            : surveyDetails,
         });
       } else {
         res.status(200).json({
@@ -239,6 +243,92 @@ app.get("/verifySurveyDetails", async (req, res) => {
     }
   }
 });
+
+app.get("/submittedSurveysList", async (req, res) => {
+  const tokenData = TokenExpiry(req, res);
+  if (tokenData.statusCode === 401) {
+    res.status(401).json({ message: tokenData.error });
+  } else {
+    try {
+      const surveyApproval = await SurveyApproval.find().lean();
+      const surveyDetails = await SubmittedSurveys.find().lean();
+      // console.log('Surveys:', surveyApproval.map(survey => survey.toObject()));
+      // console.log(surveyApproval)
+      // console.log(surveyDetails);
+      
+
+      if (surveyApproval && surveyDetails) {
+       const combinedArray =  surveyDetails.map(survey => {
+          const matchingApproval = surveyApproval.find(approval => approval.submittedUserEmail === survey.createdEmail);
+          if (matchingApproval) {
+            return {
+              ...survey,
+              submittedSurvey: matchingApproval.submittedSurvey,
+              approvedSurvey: matchingApproval.approvedSurvey
+            };
+          }
+        });
+
+        const mergedData = combinedArray.map(item => {
+          return {
+            ...item.surveyFormGeneral,  // Merge surveyFormGeneral
+            ...item.surveyFormDetails,  // Merge surveyFormDetails
+            ...item.surveyFormfiles,    // Merge surveyFormfiles
+            _id: item._id,              // Keep the _id from the original
+            createdBy: item.createdBy,
+            createdEmail: item.createdEmail,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            submittedSurvey: item.submittedSurvey,
+            approvedSurvey: item.approvedSurvey
+          };
+        });
+        res.status(200).json({
+          submittedSurveys: mergedData,// approvedSurvey: surveyExisted,
+          message: "All Surveys Data",
+        });
+      } else {
+        res.status(200).json({
+          message: "No data",
+        });
+      }
+    } catch (err) {
+      res
+        .status(500)
+        .json({ success: false, message: "Internal Server Error" });
+    }
+  }
+});
+
+
+
+app.put('/approve-reject-survey', async (req, res) => {
+  const tokenData = TokenExpiry(req, res);
+  if (tokenData.statusCode === 401) {
+    res.status(401).json({ message: tokenData.error });
+  } else {
+    try {
+      const approvalSurvey = await SurveyApproval.findOne({
+        submittedUserId: req.body.userId,
+        submittedUserEmail: req.body.email,
+        approvalSurveyId: req.body.surveyId
+      });
+      const keyNames = Object.keys(req.body);
+      const changeKeyValue = keyNames.includes('approveSurvey') ? 'approvedSurvey' : 'submittedSurvey';
+      approvalSurvey.set({
+        [changeKeyValue]: changeKeyValue === 'approvedSurvey' ? true : false,
+      });
+      await approvalSurvey.save();
+      res.status(200).json({
+        message: `Survey Successfull ${changeKeyValue === 'approvedSurvey' ? "Approved" : "Rejected"}`,
+      });
+    } catch (error) {
+      res
+      .status(500)
+      .json({ success: false, message: "Internal Server Error" });
+    }
+  }
+})
 
 // Start server
 app.listen(3001, () => {

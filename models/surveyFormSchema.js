@@ -58,7 +58,7 @@ const surveySchema = new mongoose.Schema(
         required: [true, "Pre-Survey-Planner is required"],
         trim: true,
       },
-      region: {
+      surveyor: {
         type: String,
         required: [true, "Region is required"],
         trim: true,
